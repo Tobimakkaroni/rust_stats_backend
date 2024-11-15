@@ -1,7 +1,10 @@
+import logging
+import requests
 from ninja import Router
 from .schema import SteamStatsInput, SteamStatsOutput
-import requests
 from django.conf import settings
+
+logger = logging.getLogger(__name__)
 
 router = Router()
 
@@ -18,7 +21,7 @@ def get_user_stats(request, payload: SteamStatsInput):
     game_name = payload.game_name
 
     user_games = fetch_owned_games(steam_id)
-    game_id = next((game["id"] for game in user_games if game["name"].lower() == game_name.lower()), None)
+    game_id = next((game["appid"] for game in user_games if game["name"].lower() == game_name.lower()), None)
 
     if not game_id:
         return {"error": "Game not found in user's library."}
@@ -32,10 +35,20 @@ def get_user_stats(request, payload: SteamStatsInput):
     stats_params = {"key": settings.STEAM_API_KEY, "steamid": steam_id, "appid": game_id}
     stats_resp = requests.get(stats_url, params=stats_params).json()
 
+    logger.info(f"Stats Response for {game_name}: {stats_resp}")
+
+    stats = [
+        {
+            "name": stat["name"],
+            "value": str(stat["value"])
+        }
+        for stat in stats_resp.get("playerstats", {}).get("stats", [])
+    ]
+
     return {
         "steam_name": user_data.get("personaname", "Unknown User"),
         "game_time": user_data.get("playtime_forever", 0) / 60,
-        "stats": stats_resp.get("playerstats", {}).get("stats", {})
+        "stats": stats
     }
 
 def fetch_owned_games(steam_id):
